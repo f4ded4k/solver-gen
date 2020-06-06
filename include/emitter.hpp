@@ -351,6 +351,14 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
   file.close();
 }
 
+void emitExe(const ConfigDir &dir) {
+  std::stringstream command_ss;
+  command_ss << "nvcc -O3 " << dir.src / "host.cu"
+             << " " << dir.src / "device.cu"
+             << " -o solver";
+  std::system(command_ss.str().c_str());
+}
+
 } // namespace Emitter
 
 } // namespace RKI

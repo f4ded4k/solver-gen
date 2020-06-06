@@ -18,7 +18,7 @@ int main() {
 
     RKI::Emitter::emitSrcs(config_dir, parsed_obj);
 
-    // run command nvcc to create executable
+    RKI::Emitter::emitExe(config_dir);
 
   } catch (std::exception &e) {
     std::cerr << e.what() << '\n';
