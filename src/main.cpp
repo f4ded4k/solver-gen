@@ -25,7 +25,13 @@ int main(int argc, char **argv) {
       "c,config", "Path to config file",
       Opts::value(config)->default_value("config.yml"))(
       "f,flags", "Flags passed to CUDA toolchain", Opts::value(cuda_flags));
-  options.parse(argc, argv);
+
+  try {
+    options.parse(argc, argv);
+  } catch (std::exception &e) {
+    std::cerr << e.what() << '\n';
+    return 1;
+  }
 
   if (help) {
     std::cout << options.help() << '\n';
@@ -51,7 +57,7 @@ int main(int argc, char **argv) {
 
   } catch (std::exception &e) {
     std::cerr << e.what() << '\n';
-    return 0;
+    return 1;
   }
 
   return 0;
