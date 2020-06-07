@@ -31,7 +31,7 @@ ConfigDir configureDirectory(const fs::path &config_path) {
   return ret;
 }
 
-void emitSrcs(const ConfigDir &dir, const Parser::ParsedObject &obj) {
+void emitSources(const ConfigDir &dir, const Parser::ParsedObject &obj) {
   std::ofstream file(dir.src / "config.h");
 
   std::string format_str = R"CPP(#include <cstdint>
@@ -351,7 +351,8 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
   file.close();
 }
 
-void emitExe(const ConfigDir &dir, const std::vector<std::string> flags) {
+void emitExecutable(const ConfigDir &dir,
+                    const std::vector<std::string> &flags) {
   std::stringstream command_ss;
   command_ss << "nvcc ";
   for (auto &&flag : flags) {

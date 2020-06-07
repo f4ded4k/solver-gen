@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <filesystem>
 #include <iostream>
 
@@ -11,7 +12,7 @@ namespace Opts = cxxopts;
 
 int main(int argc, char **argv) {
 
-  bool help;
+  bool help, quiet;
   fs::path config;
   std::vector<std::string> cuda_flags;
 
@@ -19,7 +20,9 @@ int main(int argc, char **argv) {
   options.add_options()(
       "h,help", "Show available options",
       Opts::value(help)->default_value("false")->implicit_value("true"))(
-      "c,config", "Path to config.yml",
+      "q,quiet", "Disable output messages",
+      Opts::value(quiet)->default_value("false")->implicit_value("true"))(
+      "c,config", "Path to config file",
       Opts::value(config)->default_value("config.yml"))(
       "f,flags", "Flags passed to CUDA toolchain", Opts::value(cuda_flags));
   options.parse(argc, argv);
@@ -30,14 +33,21 @@ int main(int argc, char **argv) {
   }
 
   try {
-
+    if (!quiet)
+      std::cout << "Configuring directory structure...\n";
     auto config_dir = RKI::Emitter::configureDirectory(config);
 
+    if (!quiet)
+      std::cout << "Parsing config file...\n";
     auto parsed_obj = RKI::Parser::parse(config);
 
-    RKI::Emitter::emitSrcs(config_dir, parsed_obj);
+    if (!quiet)
+      std::cout << "Emitting source files...\n";
+    RKI::Emitter::emitSources(config_dir, parsed_obj);
 
-    RKI::Emitter::emitExe(config_dir, cuda_flags);
+    if (!quiet)
+      std::cout << "Generating executable...\n";
+    RKI::Emitter::emitExecutable(config_dir, cuda_flags);
 
   } catch (std::exception &e) {
     std::cerr << e.what() << '\n';

@@ -94,12 +94,9 @@ ParsedObject parse(const fs::path &config_path) {
         attr.second, idxs, 0, [&](const std::vector<uint16> &idxs) {
           std::stringstream ss;
           ss << attr.first;
-          if (idxs.size())
-            ss << '[' << idxs[0];
-          for (uint16 i = 1; i < idxs.size(); ++i)
-            ss << ',' << idxs[i];
-          if (idxs.size())
-            ss << ']';
+          for (auto &&idx : idxs) {
+            ss << '[' << idx << ']';
+          }
           auto iter = detail::insertElseThrow(
               ret.SymbolTable, ss.str(),
               Gin::symbol("g[" + std::to_string(ret.NumPar) + "]"));
