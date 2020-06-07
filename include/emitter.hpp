@@ -19,7 +19,7 @@ ConfigDir configureDirectory(const fs::path &config_path) {
   if (!fs::is_regular_file(config_path)) {
     throw std::runtime_error("Config file doesn't exist");
   }
-  ret.root = config_path.parent_path();
+  ret.root = fs::absolute(config_path).parent_path();
   ret.input = ret.root / "input";
   ret.output = ret.root / "output";
   ret.src = ret.root / "src";
@@ -351,11 +351,15 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
   file.close();
 }
 
-void emitExe(const ConfigDir &dir) {
+void emitExe(const ConfigDir &dir, const std::vector<std::string> flags) {
   std::stringstream command_ss;
-  command_ss << "nvcc -O3 " << dir.src / "host.cu"
+  command_ss << "nvcc ";
+  for (auto &&flag : flags) {
+    command_ss << flag << " ";
+  }
+  command_ss << dir.src / "host.cu"
              << " " << dir.src / "device.cu"
-             << " -o solver";
+             << " -o " << dir.root / "solver";
   std::system(command_ss.str().c_str());
 }
 
