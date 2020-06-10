@@ -48,9 +48,10 @@ using namespace std;
 constexpr uint64_t NUM_SYS = %1%;
 constexpr uint16_t NUM_EQ = %2%;
 constexpr uint16_t NUM_PAR = %3%;
-constexpr double X_BEGIN = %4%;
-constexpr double X_END = %5%;
-constexpr double STEP_SIZE = %6%;
+constexpr uint16_t NUM_INTPAR = %4%;
+constexpr double X_BEGIN = %5%;
+constexpr double X_END = %6%;
+constexpr double STEP_SIZE = %7%;
 
 // Configurable solver constants
 constexpr uint16_t NUM_DIFF = 2;
@@ -79,7 +80,7 @@ __global__ void solver_main(IN double x,
                             IN_OUT uint64_t *eval_count);)CPP";
 
   file << (boost::format(format_str) % obj.NumSys % obj.NumEq % obj.NumPar %
-           obj.xBegin % obj.xEnd % obj.Stepsize)
+           obj.NumIntPar % obj.xBegin % obj.xEnd % obj.Stepsize)
               .str();
   file.close();
   file.open(dir.src / "host.cu");
@@ -224,17 +225,23 @@ int main() {
   file.close();
   file.open(dir.src / "device.cu");
 
-  std::vector<Gin::ex> equations;
-  for (auto &&[it, expr] : obj.Equations) {
-    equations.emplace_back(it->second.diff(obj.x) == expr);
+  std::vector<Gin::ex> eqs;
+
+  for (auto &&[it, expr] : obj.InterParams) {
+    eqs.emplace_back(it->second == expr);
   }
-  std::stringstream eqs_ss;
-  for (int i = 0; i < obj.NumDiff; ++i) {
-    for (auto &&eq : equations) {
-      eqs_ss << "  " << eq.lhs() << " = " << eq.rhs() << ";\n";
+  for (auto &&[it, expr] : obj.Equations) {
+    eqs.emplace_back(it->second.diff(obj.x) == expr);
+  }
+  std::stringstream ss;
+  ss << Gin::csrc;
+  if (obj.NumIntPar != 0)
+    ss << "  double ig[NUM_INTPAR * NUM_DIFF];\n\n";
+  for (uint16 i = 0; i < obj.NumDiff; ++i) {
+    for (auto &&eq : eqs) {
+      ss << "  " << eq.lhs() << " = " << eq.rhs() << ";\n";
       eq = eq.diff(obj.x);
     }
-    eqs_ss << '\n';
   }
 
   format_str = R"CPP(#include "config.h"
@@ -347,7 +354,7 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
   }
 })CPP";
 
-  file << (boost::format(format_str) % eqs_ss.str()).str();
+  file << (boost::format(format_str) % ss.str()).str();
   file.close();
 }
 

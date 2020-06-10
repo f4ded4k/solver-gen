@@ -8,45 +8,77 @@ namespace Gin = GiNaC;
 
 namespace GinExt {
 
-DECLARE_FUNCTION_3P(unkwn_array);
-DECLARE_FUNCTION_3P(diff_array);
+DECLARE_FUNCTION_3P(unknown_array);
+DECLARE_FUNCTION_3P(diffunknown_array);
+DECLARE_FUNCTION_1P(param_array);
+DECLARE_FUNCTION_3P(interparam_array);
 DECLARE_FUNCTION_1P(cstm_step);
 
 #define UNKWN_PARAMLIST                                                        \
   const Gin::ex &x, const Gin::ex &i, const Gin::ex &num_eq
 #define DIFF_PARAMLIST const Gin::ex &x, const Gin::ex &i, const Gin::ex &num_eq
+#define PARAM_PARAMLIST const Gin::ex &i
+#define INTERPARAM_PARAMLIST                                                   \
+  const Gin::ex &x, const Gin::ex &i, const Gin::ex &num_intparam
 #define STEP_PARAMLIST const Gin::ex &n
 
 #define REGISTER_FUNC(func_name, prefix)                                       \
   REGISTER_FUNCTION(func_name,                                                 \
                     eval_func(prefix##Eval)                                    \
                         .derivative_func(prefix##Diff)                         \
-                        .print_func<Gin::print_dflt>(prefix##Print))
+                        .print_func<Gin::print_csrc>(prefix##Print))
 
-Gin::ex unkwnEval(UNKWN_PARAMLIST) { return unkwn_array(x, i, num_eq).hold(); }
+Gin::ex unknownEval(UNKWN_PARAMLIST) {
+  return unknown_array(x, i, num_eq).hold();
+}
 
-Gin::ex unkwnDiff(UNKWN_PARAMLIST, unsigned o) {
+Gin::ex unknownDiff(UNKWN_PARAMLIST, unsigned o) {
   if (o == 0)
-    return diff_array(x, i, num_eq).hold();
+    return diffunknown_array(x, i, num_eq).hold();
   else
     return 0;
 }
 
-void unkwnPrint(UNKWN_PARAMLIST, const Gin::print_context &ctx) {
-  ctx.s << "y[" << i << "]";
+void unknownPrint(UNKWN_PARAMLIST, const Gin::print_context &ctx) {
+  ctx.s << "y[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
 }
 
-Gin::ex diffEval(DIFF_PARAMLIST) { return diff_array(x, i, num_eq).hold(); }
+Gin::ex diffunknownEval(DIFF_PARAMLIST) {
+  return diffunknown_array(x, i, num_eq).hold();
+}
 
-Gin::ex diffDiff(DIFF_PARAMLIST, unsigned o) {
+Gin::ex diffunknownDiff(DIFF_PARAMLIST, unsigned o) {
   if (o == 0)
-    return diff_array(x, i + num_eq, num_eq).hold();
+    return diffunknown_array(x, i + num_eq, num_eq).hold();
   else
     return 0;
 }
 
-void diffPrint(DIFF_PARAMLIST, const Gin::print_context &ctx) {
-  ctx.s << "dy[" << i << "]";
+void diffunknownPrint(DIFF_PARAMLIST, const Gin::print_context &ctx) {
+  ctx.s << "dy[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
+}
+
+Gin::ex paramEval(PARAM_PARAMLIST) { return param_array(i).hold(); }
+
+Gin::ex paramDiff(PARAM_PARAMLIST, unsigned) { return 0; }
+
+void paramPrint(PARAM_PARAMLIST, const Gin::print_context &ctx) {
+  ctx.s << "g[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
+}
+
+Gin::ex interparamEval(INTERPARAM_PARAMLIST) {
+  return interparam_array(x, i, num_intparam).hold();
+}
+
+Gin::ex interparamDiff(INTERPARAM_PARAMLIST, unsigned o) {
+  if (o == 0)
+    return interparam_array(x, i + num_intparam, num_intparam);
+  else
+    return 0;
+}
+
+void interparamPrint(INTERPARAM_PARAMLIST, const Gin::print_context &ctx) {
+  ctx.s << "ig[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
 }
 
 Gin::ex stepEval(STEP_PARAMLIST) { return cstm_step(n).hold(); }
@@ -54,15 +86,19 @@ Gin::ex stepEval(STEP_PARAMLIST) { return cstm_step(n).hold(); }
 Gin::ex stepDiff(STEP_PARAMLIST, unsigned) { return 0; }
 
 void stepPrint(STEP_PARAMLIST, const Gin::print_context &ctx) {
-  ctx.s << "((" << n << ")>= 0.0)";
+  ctx.s << "((" << n << ") >= 0.0)";
 }
 
-REGISTER_FUNC(unkwn_array, unkwn);
-REGISTER_FUNC(diff_array, diff);
+REGISTER_FUNC(unknown_array, unknown);
+REGISTER_FUNC(diffunknown_array, diffunknown);
+REGISTER_FUNC(param_array, param);
+REGISTER_FUNC(interparam_array, interparam);
 REGISTER_FUNC(cstm_step, step);
 
 #undef UNKWN_PARAMLIST
 #undef DIFF_PARAMLIST
+#undef PARAM_PARAMLIST
+#undef INTERPARAM_PARAMLIST
 #undef STEP_PARAMLIST
 #undef REGISTER_FUNC
 

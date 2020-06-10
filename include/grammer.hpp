@@ -21,7 +21,6 @@ static const X3::rule<class F, Gin::ex> F;
 static const X3::rule<class G, Gin::ex> G;
 static const X3::rule<class H, Gin::ex> H;
 static const X3::rule<class Id, std::string> Id;
-static const X3::rule<class Num, double> Num;
 static const X3::rule<class Sym, std::string> Sym;
 static const X3::rule<class SymArr, std::pair<std::string, std::vector<uint16>>>
     SymArr;
@@ -95,20 +94,19 @@ static const auto H_def =
      X3::lit(')'))[powAction] |
     (X3::lit("step(") > DiffFunc > X3::lit(')'))[stepAction] |
     (X3::lit('(') > DiffFunc > X3::lit(')'))[initAction] | Id[idAction] |
-    Num[numAction];
+    X3::long_[numAction] | X3::double_[numAction];
 
 static const auto Id_def =
-    X3::lexeme[X3::alpha >> *X3::alnum >>
+    X3::lexeme[X3::alpha >> *(X3::alnum | X3::char_('_')) >>
                *(X3::char_('[') > *X3::digit > X3::char_(']'))];
 
-static const auto Num_def = X3::double_;
-
-static const auto Sym_def = X3::lexeme[X3::alpha >> *X3::alnum];
+static const auto Sym_def =
+    X3::lexeme[X3::alpha >> *(X3::alnum | X3::char_('_'))];
 
 static const auto SymArr_def =
     X3::lexeme[Sym >> *(X3::lit('(') > X3::uint16 > X3::lit(')'))];
 
-BOOST_SPIRIT_DEFINE(DiffFunc, F, G, H, Id, Num, Sym, SymArr);
+BOOST_SPIRIT_DEFINE(DiffFunc, F, G, H, Id, Sym, SymArr);
 
 #undef VAL
 #undef ATTR
