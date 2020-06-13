@@ -115,7 +115,7 @@ int main() {
   auto g = new double[G_GLOBAL_SIZE];
   auto y = new double[Y_GLOBAL_SIZE * NUM_POINT];
 
-  fstream file("inputs/parameters.csv", ios::in);
+  fstream file("input/parameters.csv", ios::in);
   string line;
   char comma;
   for (uint64_t i = 0; i < NUM_SYS; ++i) {
@@ -128,7 +128,7 @@ int main() {
   }
   file.close();
 
-  file.open("inputs/initial_values.csv", ios::in);
+  file.open("input/initial_values.csv", ios::in);
   for (uint64_t i = 0; i < NUM_SYS; ++i) {
     getline(file, line);
     stringstream ss(line);
@@ -198,7 +198,7 @@ int main() {
 
   auto result_start_time = steady_clock::now();
 
-  file.open("outputs/result.csv", ios::out);
+  file.open("output/result.csv", ios::out);
   file << scientific << setprecision(8);
   decltype(Y_GLOBAL_SIZE * NUM_POINT) index = 0;
   x_curr = X_BEGIN;
@@ -215,7 +215,7 @@ int main() {
   delete[] g;
 
   auto result_finish_time = steady_clock::now();
-  cout << "Finished writing output to outputs/result.csv in "
+  cout << "Finished writing output to output/result.csv in "
        << duration_cast<milliseconds>(result_finish_time - result_start_time)
               .count()
        << "ms\n";
