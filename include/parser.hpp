@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <sstream>
 
 #include <boost/format.hpp>
@@ -18,11 +19,72 @@ namespace Parser {
 using uint16 = uint16_t;
 using uint64 = uint64_t;
 
+// Contains butcher coefficients for the required solver
+struct SolverMethod {
+  uint16 NumStage, NumDiff, PrimaryOrder, EmbeddedOrder;
+  std::vector<std::vector<std::vector<Gin::numeric>>> a;
+  std::vector<std::vector<Gin::numeric>> b, eb;
+  std::vector<Gin::numeric> c;
+
+  SolverMethod(uint16 NumStage, uint16 NumDiff, uint16 PrimaryOrder,
+               uint16_t EmbeddedOrder)
+      : NumStage(NumStage), NumDiff(NumDiff), PrimaryOrder(PrimaryOrder),
+        EmbeddedOrder(EmbeddedOrder) {
+    a.resize(NumStage);
+    for (uint16 i = 0; i < NumStage; ++i) {
+      a[i].resize(i);
+      for (auto &&x : a[i]) {
+        x.resize(NumDiff);
+      }
+    }
+    b.resize(NumStage);
+    for (auto &&x : b) {
+      x.resize(NumDiff);
+    }
+    eb.resize(NumStage);
+    for (auto &&x : eb) {
+      x.resize(NumDiff);
+    }
+    c.resize(NumStage);
+  }
+};
+
+struct RKI45 : SolverMethod {
+  RKI45() : SolverMethod(3, 2, 5, 4) {
+    a[1][0][0] = Gin::numeric(3, 11);
+    a[1][0][1] = Gin::numeric(9, 242);
+    a[2][0][0] = Gin::numeric(18, 25);
+    a[2][0][1] = Gin::numeric(-9, 15625);
+    a[2][1][0] = Gin::numeric(0);
+    a[2][1][1] = Gin::numeric(4059, 15625);
+
+    b[0][0] = Gin::numeric(1);
+    b[0][1] = Gin::numeric(53, 648);
+    b[1][0] = Gin::numeric(0);
+    b[1][1] = Gin::numeric(1331, 4428);
+    b[2][0] = Gin::numeric(0);
+    b[2][1] = Gin::numeric(3125, 26568);
+
+    eb[0][0] = Gin::numeric(783089, 1417500);
+    eb[0][1] = Gin::numeric(5989, 157500);
+    eb[1][0] = Gin::numeric(3115871, 9686250);
+    eb[1][1] = Gin::numeric(28919, 157500);
+    eb[2][0] = Gin::numeric(11705, 92988);
+    eb[2][1] = Gin::numeric(1, 10);
+
+    c[0] = Gin::numeric(0);
+    c[1] = Gin::numeric(3, 11);
+    c[2] = Gin::numeric(18, 25);
+  }
+};
+
 // Contains parsed configurations
 struct ParsedObject {
   uint64 NumSys = 0;
-  uint16 NumEq = 0, NumPar = 0, NumIntPar = 0, NumDiff = 2;
+  uint16 NumEq = 0, NumPar = 0, NumIntPar = 0;
   double Stepsize = 0, xBegin = 0, xEnd = 0;
+
+  std::unique_ptr<SolverMethod> Method;
 
   Gin::symbol x;
   Gin::symtab SymbolTable;
@@ -96,6 +158,18 @@ ParsedObject parse(const fs::path &config_path) {
     ret.SymbolTable[attr] = ret.x;
   } else {
     ret.SymbolTable["x"] = ret.x;
+  }
+
+  // Parse solver method
+  if (auto method_yml = config_yml["Method"]; method_yml) {
+    auto method = method_yml.as<std::string>();
+    if (method == "rki45") {
+      ret.Method = std::make_unique<RKI45>();
+    } else {
+      detail::throwIf(true, "Invalid method: " + method);
+    }
+  } else {
+    ret.Method = std::make_unique<RKI45>();
   }
 
   // Parse unknown declarations
@@ -177,11 +251,9 @@ ParsedObject parse(const fs::path &config_path) {
 
   // parse equations
   for (auto &&[sym_it, attr] : ret.Equations) {
-    if (auto text_yml = config_yml["Equations"][sym_it->first + "'"];
-        text_yml) {
-      detail::parseElseThrow(text_yml.as<std::string>(), Grammer::DiffFunc,
-                             attr);
-    }
+    detail::parseElseThrow(
+        config_yml["Equations"][sym_it->first + "'"].as<std::string>(),
+        Grammer::DiffFunc, attr);
   }
 
   Grammer::SymbolTable = nullptr;

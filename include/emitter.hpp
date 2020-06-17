@@ -31,6 +31,20 @@ ConfigDir configureDirectory(const fs::path &config_path) {
   return ret;
 }
 
+template <typename V>
+std::ostream &operator<<(std::ostream &os, const std::vector<V> &v) {
+  if (v.empty()) {
+    os << "{}";
+    return os;
+  }
+  os << "{" << v[0];
+  for (std::size_t i = 1; i < v.size(); ++i) {
+    os << "," << v[i];
+  }
+  os << "}";
+  return os;
+}
+
 void emitSources(const ConfigDir &dir, const Parser::ParsedObject &obj) {
   std::ofstream file(dir.src / "config.h");
 
@@ -54,10 +68,10 @@ constexpr double X_END = %6%;
 constexpr double STEP_SIZE = %7%;
 
 // Configurable solver constants
-constexpr uint16_t NUM_DIFF = 2;
-constexpr uint16_t NUM_STAGE = 3;
-constexpr uint16_t PRIMARY_ORDER = 5;
-constexpr uint16_t EMBEDDED_ORDER = 4;
+constexpr uint16_t NUM_DIFF = %8%;
+constexpr uint16_t NUM_STAGE = %9%;
+constexpr uint16_t PRIMARY_ORDER = %10%;
+constexpr uint16_t EMBEDDED_ORDER = %11%;
 constexpr double TINY = 1.0e-30;
 constexpr double EPS = 1.0e-10;
 constexpr double SAFETY = 0.9;
@@ -80,7 +94,9 @@ __global__ void solver_main(IN double x,
                             IN_OUT uint64_t *eval_count);)CPP";
 
   file << (boost::format(format_str) % obj.NumSys % obj.NumEq % obj.NumPar %
-           obj.NumIntPar % obj.xBegin % obj.xEnd % obj.Stepsize)
+           obj.NumIntPar % obj.xBegin % obj.xEnd % obj.Stepsize %
+           obj.Method->NumDiff % obj.Method->NumStage %
+           obj.Method->PrimaryOrder % obj.Method->EmbeddedOrder)
               .str();
   file.close();
   file.open(dir.src / "host.cu");
@@ -226,34 +242,40 @@ int main() {
   file.open(dir.src / "device.cu");
 
   std::vector<Gin::ex> eqs;
-
   for (auto &&[it, expr] : obj.InterParams) {
     eqs.emplace_back(it->second == expr);
   }
   for (auto &&[it, expr] : obj.Equations) {
     eqs.emplace_back(it->second.diff(obj.x) == expr);
   }
-  std::stringstream ss;
-  ss << Gin::csrc;
-  if (obj.NumIntPar != 0)
-    ss << "  double ig[NUM_INTPAR * NUM_DIFF];\n\n";
-  for (uint16 i = 0; i < obj.NumDiff; ++i) {
+  std::stringstream eqs_ss, a_ss, b_ss, eb_ss, c_ss;
+  eqs_ss << Gin::csrc;
+  if (obj.NumIntPar != 0) {
+    eqs_ss << "  double ig[NUM_DIFF][NUM_INTPAR];\n\n";
+  }
+  for (uint16 i = 0; i < obj.Method->NumDiff; ++i) {
     for (auto &&eq : eqs) {
-      ss << "  " << eq.lhs() << " = " << eq.rhs() << ";\n";
+      eqs_ss << "  " << eq.lhs() << " = " << eq.rhs() << ";\n";
       eq = eq.diff(obj.x);
     }
   }
 
+  a_ss << Gin::csrc << obj.Method->a;
+  b_ss << Gin::csrc << obj.Method->b;
+  eb_ss << Gin::csrc << obj.Method->eb;
+  c_ss << Gin::csrc << obj.Method->c;
+
   format_str = R"CPP(#include "config.h"
 
 __device__ void compute_system(IN double h, IN double x, IN double y[NUM_EQ],
-                               IN double g[NUM_PAR], OUT double dy[DY_SIZE]) {
+                               IN double g[NUM_PAR],
+                               OUT double dy[NUM_DIFF][NUM_EQ]) {
 %1%
 
   double hx = h;
-  for (uint16_t diff = 0; diff < NUM_DIFF; ++diff) {
-    for (uint16_t i = 0; i < NUM_EQ; ++i) {
-      dy[NUM_EQ * diff + i] *= hx;
+  for (uint16_t i = 0; i < NUM_DIFF; ++i) {
+    for (uint16_t j = 0; j < NUM_EQ; ++j) {
+      dy[i][j] *= hx;
     }
     hx *= h;
   }
@@ -275,60 +297,59 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
       g[i] = g_global[sys_index + NUM_SYS * i];
     }
 
-    constexpr double a[NUM_DIFF][NUM_STAGE][NUM_STAGE] = {
-        {{3.0 / 11.0}, {18.0 / 25.0, 0.0}},
-        {{9.0 / 242.0}, {-9.0 / 15625.0, 4059.0 / 15625.0}}};
+    constexpr double a[NUM_STAGE][NUM_STAGE][NUM_DIFF] = %2%;
 
-    constexpr double b[NUM_DIFF][NUM_STAGE] = {
-        {1.0, 0.0, 0.0}, {53.0 / 648.0, 1331.0 / 4428.0, 3125.0 / 26568.0}};
+    constexpr double b[NUM_STAGE][NUM_DIFF] = %3%;
 
-    constexpr double eb[NUM_DIFF][NUM_STAGE] = {
-        {783089.0 / 1417500.0, 3115871.0 / 9686250.0, 11705.0 / 92988.0},
-        {5989.0 / 157500.0, 28919.0 / 157500.0, 1.0 / 10.0}};
+    constexpr double eb[NUM_STAGE][NUM_DIFF] = %4%;
 
-    constexpr double c[NUM_STAGE] = {0.0, 3.0 / 11.0, 18.0 / 25.0};
+    constexpr double c[NUM_STAGE] = %5%;
 
     double x_curr = x, x_end = x + STEP_SIZE;
     double h = 0.5 * STEP_SIZE;
 
     while (x_curr < x_end) {
-      (*eval_count) += 3;
+      (*eval_count) += NUM_STAGE;
 
       double y_temp[NUM_EQ];
 
-      double k1[DY_SIZE];
-      compute_system(h, x_curr + c[0], y, g, k1);
+      double k[NUM_STAGE][NUM_DIFF][NUM_EQ];
+      compute_system(h, x_curr + c[0], y, g, k[0]);
 
-      for (uint16_t i = 0; i < NUM_EQ; ++i) {
-        y_temp[i] = y[i] + a[0][0][0] * k1[i] + a[1][0][0] * k1[NUM_EQ + i];
+      for (uint16_t stage = 1; stage < NUM_STAGE; ++stage) {
+        for (uint16_t eq = 0; eq < NUM_EQ; ++eq) {
+          y_temp[eq] = y[eq];
+          for (uint16_t i = 0; i < stage; ++i) {
+            for (uint16_t j = 0; j < NUM_DIFF; ++j) {
+              y_temp[eq] += a[stage][i][j] * k[i][j][eq];
+            }
+          }
+        }
+        compute_system(h, x_curr + c[stage], y_temp, g, k[stage]);
       }
 
-      double k2[DY_SIZE];
-      compute_system(h, x_curr + c[1] * h, y_temp, g, k2);
-
-      for (uint16_t i = 0; i < NUM_EQ; ++i) {
-        y_temp[i] = y[i] + a[0][1][0] * k1[i] + a[0][1][1] * k2[i] +
-                    a[1][1][0] * k1[NUM_EQ + i] + a[1][1][1] * k2[NUM_EQ + i];
-      }
-
-      double k3[DY_SIZE];
-      compute_system(h, x_curr + c[2] * h, y_temp, g, k3);
-
-      for (uint16_t i = 0; i < NUM_EQ; ++i) {
-        y_temp[i] = y[i] + b[0][0] * k1[i] + b[0][1] * k2[i] + b[0][2] * k3[i] +
-                    b[1][0] * k1[NUM_EQ + i] + b[1][1] * k2[NUM_EQ + i] +
-                    b[1][2] * k3[NUM_EQ + i];
+      for (uint16_t eq = 0; eq < NUM_EQ; ++eq) {
+        y_temp[eq] = y[eq];
+        for (uint16_t i = 0; i < NUM_STAGE; ++i) {
+          for (uint16_t j = 0; j < NUM_DIFF; ++j) {
+            y_temp[eq] += b[i][j] * k[i][j][eq];
+          }
+        }
       }
 
       double err = 0.0;
       bool is_nan = false;
-      for (uint16_t i = 0; i < NUM_EQ; ++i) {
-        double err_curr =
-            y_temp[i] - (y[i] + eb[0][0] * k1[i] + eb[0][1] * k2[i] +
-                         eb[0][2] * k3[i] + eb[1][0] * k1[NUM_EQ + i] +
-                         eb[1][1] * k2[NUM_EQ + i] + eb[1][2] * k3[NUM_EQ + i]);
+      for (uint16_t eq = 0; eq < NUM_EQ; ++eq) {
+        double ey = y[eq];
+        for (uint16_t i = 0; i < NUM_STAGE; ++i) {
+          for (uint16_t j = 0; j < NUM_DIFF; ++j) {
+            ey += eb[i][j] * k[i][j][eq];
+          }
+        }
+        double err_curr = y_temp[eq] - ey;
 
-        err = fmax(err, fabs(err_curr / (fabs(y[i]) + fabs(k1[i]) + TINY)));
+        err = fmax(err,
+                   fabs(err_curr / (fabs(y[eq]) + fabs(k[0][0][eq]) + TINY)));
         is_nan |= isnan(err) | isnan(err_curr);
       }
       err /= EPS;
@@ -354,7 +375,9 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
   }
 })CPP";
 
-  file << (boost::format(format_str) % ss.str()).str();
+  file << (boost::format(format_str) % eqs_ss.str() % a_ss.str() % b_ss.str() %
+           eb_ss.str() % c_ss.str())
+              .str();
   file.close();
 }
 

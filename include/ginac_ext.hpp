@@ -55,7 +55,9 @@ Gin::ex diffunknownDiff(DIFF_PARAMLIST, unsigned o) {
 }
 
 void diffunknownPrint(DIFF_PARAMLIST, const Gin::print_context &ctx) {
-  ctx.s << "dy[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
+  auto i_int = Gin::to_long(Gin::ex_to<Gin::numeric>(i));
+  auto num_eq_int = Gin::to_long(Gin::ex_to<Gin::numeric>(num_eq));
+  ctx.s << "dy[" << (i_int / num_eq_int) << "][" << (i_int % num_eq_int) << "]";
 }
 
 Gin::ex paramEval(PARAM_PARAMLIST) { return param_array(i).hold(); }
@@ -78,7 +80,10 @@ Gin::ex interparamDiff(INTERPARAM_PARAMLIST, unsigned o) {
 }
 
 void interparamPrint(INTERPARAM_PARAMLIST, const Gin::print_context &ctx) {
-  ctx.s << "ig[" << Gin::to_long(Gin::ex_to<Gin::numeric>(i)) << "]";
+  auto i_int = Gin::to_long(Gin::ex_to<Gin::numeric>(i));
+  auto num_intparam_int = Gin::to_long(Gin::ex_to<Gin::numeric>(num_intparam));
+  ctx.s << "ig[" << (i_int / num_intparam_int) << "]["
+        << (i_int % num_intparam_int) << "]";
 }
 
 Gin::ex stepEval(STEP_PARAMLIST) { return cstm_step(n).hold(); }
