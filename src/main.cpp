@@ -15,15 +15,18 @@ int main(int argc, char **argv) {
   bool help, quiet;
   fs::path config;
   std::vector<std::string> cuda_flags;
+  std::string dir_name;
 
   Opts::Options options("solver-gen");
   options.add_options()(
       "h,help", "Show available options",
       Opts::value(help)->default_value("false")->implicit_value("true"))(
-      "q,quiet", "Disable output messages",
+      "q,quiet", "Disable log messages",
       Opts::value(quiet)->default_value("false")->implicit_value("true"))(
       "c,config", "Path to config file",
       Opts::value(config)->default_value("config.yml"))(
+      "d,dir", "Directory name inside config directory to emit files into",
+      Opts::value(dir_name)->default_value("solver"))(
       "f,flags", "Flags passed to CUDA toolchain", Opts::value(cuda_flags));
 
   try {
@@ -41,7 +44,7 @@ int main(int argc, char **argv) {
   try {
     if (!quiet)
       std::cout << "Configuring directory structure...\n";
-    auto config_dir = RKI::Emitter::configureDirectory(config);
+    auto config_dir = RKI::Emitter::configureDirectory(config, dir_name);
 
     if (!quiet)
       std::cout << "Parsing config file...\n";

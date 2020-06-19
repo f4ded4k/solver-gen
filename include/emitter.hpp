@@ -10,23 +10,32 @@ namespace fs = std::filesystem;
 namespace Emitter {
 
 struct ConfigDir {
-  fs::path root, input, output, src, config;
+  fs::path root, input, output, src;
 };
 
-ConfigDir configureDirectory(const fs::path &config_path) {
+ConfigDir configureDirectory(const fs::path &config_path,
+                             const std::string &dir_name) {
   ConfigDir ret;
 
   if (!fs::is_regular_file(config_path)) {
     throw std::runtime_error("Config file doesn't exist");
   }
-  ret.root = fs::absolute(config_path).parent_path();
+
+  ret.root = fs::absolute(config_path).parent_path() / dir_name;
   ret.input = ret.root / "input";
   ret.output = ret.root / "output";
   ret.src = ret.root / "src";
-  ret.config = config_path;
+
+  fs::create_directories(ret.root);
   fs::create_directory(ret.input);
   fs::create_directory(ret.output);
   fs::create_directory(ret.src);
+
+  std::ofstream file;
+  file.open(ret.input / "parameters.csv", std::ios::out | std::ios::app);
+  file.close();
+  file.open(ret.input / "initial_values.csv", std::ios::out | std::ios::app);
+  file.close();
 
   return ret;
 }
@@ -314,7 +323,7 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
       double y_temp[NUM_EQ];
 
       double k[NUM_STAGE][NUM_DIFF][NUM_EQ];
-      compute_system(h, x_curr + c[0], y, g, k[0]);
+      compute_system(h, x_curr + h * c[0], y, g, k[0]);
 
       for (uint16_t stage = 1; stage < NUM_STAGE; ++stage) {
         for (uint16_t eq = 0; eq < NUM_EQ; ++eq) {
@@ -325,7 +334,7 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
             }
           }
         }
-        compute_system(h, x_curr + c[stage], y_temp, g, k[stage]);
+        compute_system(h, x_curr + h * c[stage], y_temp, g, k[stage]);
       }
 
       for (uint16_t eq = 0; eq < NUM_EQ; ++eq) {

@@ -78,6 +78,47 @@ struct RKI45 : SolverMethod {
   }
 };
 
+struct RKCK : SolverMethod {
+  RKCK() : SolverMethod(6, 1, 5, 4) {
+    a[1][0][0] = Gin::numeric(1, 5);
+    a[2][0][0] = Gin::numeric(3, 40);
+    a[2][1][0] = Gin::numeric(9, 40);
+    a[3][0][0] = Gin::numeric(3, 10);
+    a[3][1][0] = Gin::numeric(-9, 10);
+    a[3][2][0] = Gin::numeric(6, 5);
+    a[4][0][0] = Gin::numeric(-11, 54);
+    a[4][1][0] = Gin::numeric(5, 2);
+    a[4][2][0] = Gin::numeric(-70, 27);
+    a[4][3][0] = Gin::numeric(35, 27);
+    a[5][0][0] = Gin::numeric(1631, 55296);
+    a[5][1][0] = Gin::numeric(175, 512);
+    a[5][2][0] = Gin::numeric(575, 13824);
+    a[5][3][0] = Gin::numeric(44275, 110592);
+    a[5][4][0] = Gin::numeric(253, 4096);
+
+    b[0][0] = Gin::numeric(37, 378);
+    b[1][0] = Gin::numeric(0);
+    b[2][0] = Gin::numeric(250, 621);
+    b[3][0] = Gin::numeric(125, 594);
+    b[4][0] = Gin::numeric(0);
+    b[5][0] = Gin::numeric(512, 1771);
+
+    eb[0][0] = Gin::numeric(2825, 27648);
+    eb[1][0] = Gin::numeric(0);
+    eb[2][0] = Gin::numeric(18575, 48384);
+    eb[3][0] = Gin::numeric(13525, 55296);
+    eb[4][0] = Gin::numeric(277, 14336);
+    eb[5][0] = Gin::numeric(1, 4);
+
+    c[0] = Gin::numeric(0);
+    c[1] = Gin::numeric(1, 5);
+    c[2] = Gin::numeric(3, 10);
+    c[3] = Gin::numeric(3, 5);
+    c[4] = Gin::numeric(1);
+    c[5] = Gin::numeric(7, 8);
+  }
+};
+
 // Contains parsed configurations
 struct ParsedObject {
   uint64 NumSys = 0;
@@ -165,6 +206,8 @@ ParsedObject parse(const fs::path &config_path) {
     auto method = method_yml.as<std::string>();
     if (method == "rki45") {
       ret.Method = std::make_unique<RKI45>();
+    } else if (method == "rkck") {
+      ret.Method = std::make_unique<RKCK>();
     } else {
       detail::throwIf(true, "Invalid method: " + method);
     }
@@ -259,7 +302,7 @@ ParsedObject parse(const fs::path &config_path) {
   Grammer::SymbolTable = nullptr;
 
   return ret;
-}
+} // namespace Parser
 
 } // namespace Parser
 
