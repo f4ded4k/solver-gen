@@ -1,0 +1,3 @@
+[submodule "deps/GiNaC"]
+	path = deps/GiNaC
+	url = https://github.com/f4ded4k/GiNaC.git

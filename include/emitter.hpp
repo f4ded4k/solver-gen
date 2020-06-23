@@ -100,7 +100,7 @@ constexpr double PGROW = -1.0 / PRIMARY_ORDER;
 __global__ void solver_main(IN double x,
                             IN_OUT double y_global[NUM_SYS * NUM_EQ],
                             IN double g_global[NUM_SYS * NUM_PAR],
-                            IN_OUT uint64_t *eval_count);)CPP";
+                            IN_OUT uint64_t f_cnts_global[NUM_SYS]);)CPP";
 
   file << (boost::format(format_str) % obj.NumSys % obj.NumEq % obj.NumPar %
            obj.NumIntPar % obj.xBegin % obj.xEnd % obj.Stepsize %
@@ -135,34 +135,60 @@ void cuda_error_check(cudaError_t code, const char *file, int line,
 }
 
 int main() {
-  ios_base::sync_with_stdio(false);
-
   auto g = new double[G_GLOBAL_SIZE];
   auto y = new double[Y_GLOBAL_SIZE * NUM_POINT];
+  auto pts = new double[NUM_POINT];
+  auto f_cnts = new uint64_t[NUM_SYS];
 
-  fstream file("input/parameters.csv", ios::in);
+  ifstream ifile("input/parameters.csv");
   string line;
   char comma;
   for (uint64_t i = 0; i < NUM_SYS; ++i) {
-    getline(file, line);
-    stringstream ss(line);
-    for (uint16_t j = 0; j < NUM_PAR; ++j) {
-      ss >> g[i + NUM_SYS * j];
-      ss >> comma;
+    if (getline(ifile, line)) {
+      stringstream ss(line);
+      for (uint16_t j = 0; j < NUM_PAR; ++j) {
+        if (j != 0)
+          ss >> comma;
+        ss >> g[i + NUM_SYS * j];
+        if (ss.fail()) {
+          std::cerr << "Failed to parse parameters.csv line : " << i + 1
+                    << '\n';
+          return 1;
+        }
+      }
+    } else {
+      std::cerr << "Failed to parse parameters.csv line : " << i + 1 << '\n';
+      return 1;
     }
   }
-  file.close();
 
-  file.open("input/initial_values.csv", ios::in);
+  ifile.close();
+  ifile.open("input/initial_values.csv");
   for (uint64_t i = 0; i < NUM_SYS; ++i) {
-    getline(file, line);
-    stringstream ss(line);
-    for (uint16_t j = 0; j < NUM_EQ; ++j) {
-      ss >> y[i + NUM_SYS * j];
-      ss >> comma;
+    if (getline(ifile, line)) {
+      stringstream ss(line);
+      for (uint16_t j = 0; j < NUM_EQ; ++j) {
+        if (j != 0)
+          ss >> comma;
+        ss >> y[i + NUM_SYS * j];
+        if (ss.fail()) {
+          std::cerr << "Failed to parse initial_values.csv line : " << i + 1
+                    << '\n';
+          return 1;
+        }
+      }
+    } else {
+      std::cerr << "Failed to parse initial_values.csv line : " << i + 1
+                << '\n';
+      return 1;
     }
   }
-  file.close();
+
+  ifile.close();
+
+  for (uint64_t i = 0; i < NUM_SYS; ++i) {
+    f_cnts[i] = 0;
+  }
 
   unsigned block_size;
   if (NUM_SYS < 4194304) {
@@ -181,25 +207,27 @@ int main() {
   auto gpu_start_time = steady_clock::now();
 
   double *y_device, *g_device;
+  uint64_t *f_cnts_device;
 
   CUDA_ERROR(cudaMalloc(&y_device, Y_GLOBAL_SIZE * sizeof(double)));
   CUDA_ERROR(cudaMalloc(&g_device, G_GLOBAL_SIZE * sizeof(double)));
+  CUDA_ERROR(cudaMalloc(&f_cnts_device, NUM_SYS * sizeof(uint64_t)));
 
   CUDA_ERROR(cudaMemcpy(y_device, y, Y_GLOBAL_SIZE * sizeof(double),
                         cudaMemcpyHostToDevice));
   CUDA_ERROR(cudaMemcpy(g_device, g, G_GLOBAL_SIZE * sizeof(double),
                         cudaMemcpyHostToDevice));
-
-  uint64_t eval_count = 0, *eval_count_device;
-  CUDA_ERROR(cudaMalloc(&eval_count_device, sizeof(uint64_t)));
-  CUDA_ERROR(cudaMemcpy(eval_count_device, &eval_count, sizeof(uint64_t),
+  CUDA_ERROR(cudaMemcpy(f_cnts_device, f_cnts, NUM_SYS * sizeof(uint64_t),
                         cudaMemcpyHostToDevice));
 
-  double x_curr = X_BEGIN;
+  pts[0] = X_BEGIN;
+  for (uint64_t i = 1; i < NUM_POINT; ++i) {
+    pts[i] = pts[i - 1] + STEP_SIZE;
+  }
 
-  for (uint64_t i = 1; i < NUM_POINT; ++i, x_curr += STEP_SIZE) {
-    solver_main<<<grid_dim, block_dim>>>(x_curr, y_device, g_device,
-                                         eval_count_device);
+  for (uint64_t i = 1; i < NUM_POINT; ++i) {
+    solver_main<<<grid_dim, block_dim>>>(pts[i - 1], y_device, g_device,
+                                         f_cnts_device);
 
     CUDA_ERROR(cudaGetLastError());
 
@@ -208,39 +236,42 @@ int main() {
                           cudaMemcpyDeviceToHost));
   }
 
-  CUDA_ERROR(cudaMemcpy(&eval_count, eval_count_device, sizeof(uint64_t),
+  CUDA_ERROR(cudaMemcpy(f_cnts, f_cnts_device, NUM_SYS * sizeof(uint64_t),
                         cudaMemcpyDeviceToHost));
 
   cudaFree(y_device);
   cudaFree(g_device);
-  cudaFree(eval_count_device);
+  cudaFree(f_cnts_device);
 
   auto gpu_finish_time = steady_clock::now();
-  cout << "Computation ran for : "
+  cout << "Solver ran for : "
        << duration_cast<milliseconds>(gpu_finish_time - gpu_start_time).count()
        << "ms\n";
-  cout << "Number of function evaluations : " << eval_count << '\n';
 
   auto result_start_time = steady_clock::now();
 
-  file.open("output/result.csv", ios::out);
-  file << scientific << setprecision(8);
-  decltype(Y_GLOBAL_SIZE * NUM_POINT) index = 0;
-  x_curr = X_BEGIN;
-  for (uint64_t i = 0; i < NUM_POINT; ++i, x_curr += STEP_SIZE) {
-    file << x_curr << ',';
-    for (uint64_t j = 0; j < NUM_EQ * NUM_SYS; ++j, (file << ',')) {
-      file << y[index++];
+  ofstream ofile;
+  for (uint64_t i = 0; i < NUM_SYS; ++i) {
+    ofile.open("output/result_" + to_string(i + 1) + ".csv");
+    ofile << "Number of evaluations : " << f_cnts[i] << '\n';
+    ofile << scientific << setprecision(10);
+    for (uint64_t j = 0; j < NUM_POINT; ++j) {
+      ofile << pts[j];
+      for (uint16_t k = 0; k < NUM_EQ; ++k) {
+        ofile << ", " << y[j * NUM_SYS * NUM_EQ + k * NUM_SYS + i];
+      }
+      ofile << '\n';
     }
-    file << '\n';
+    ofile.close();
   }
-  file.close();
 
   delete[] y;
   delete[] g;
+  delete[] pts;
+  delete[] f_cnts;
 
   auto result_finish_time = steady_clock::now();
-  cout << "Finished writing output to output/result.csv in "
+  cout << "Finished writing results in "
        << duration_cast<milliseconds>(result_finish_time - result_start_time)
               .count()
        << "ms\n";
@@ -264,7 +295,7 @@ int main() {
   }
   for (uint16 i = 0; i < obj.Method->NumDiff; ++i) {
     for (auto &&eq : eqs) {
-      eqs_ss << "  " << eq.lhs() << " = " << eq.rhs() << ";\n";
+      eqs_ss << "  " << eq.lhs() << " = " << eq.rhs().eval() << ";\n";
       eq = eq.diff(obj.x);
     }
   }
@@ -292,11 +323,12 @@ __device__ void compute_system(IN double h, IN double x, IN double y[NUM_EQ],
 
 __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
                             IN double g_global[G_GLOBAL_SIZE],
-                            IN_OUT uint64_t *eval_count) {
+                            IN_OUT uint64_t f_cnts_global[NUM_SYS]) {
   const uint64_t sys_index =
       (uint64_t)blockDim.x * blockIdx.x + (uint64_t)threadIdx.x;
 
   if (sys_index < NUM_SYS) {
+    uint64_t f_cnt = 0;
     double y[NUM_EQ], g[NUM_PAR];
 
     for (uint16_t i = 0; i < NUM_EQ; ++i) {
@@ -318,8 +350,7 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
     double h = 0.5 * STEP_SIZE;
 
     while (x_curr < x_end) {
-      (*eval_count) += NUM_STAGE;
-
+      f_cnt += NUM_STAGE;
       double y_temp[NUM_EQ];
 
       double k[NUM_STAGE][NUM_DIFF][NUM_EQ];
@@ -378,6 +409,7 @@ __global__ void solver_main(IN double x, IN_OUT double y_global[Y_GLOBAL_SIZE],
       h = fmin(h, x_end - x_curr);
     }
 
+    f_cnts_global[sys_index] += f_cnt;
     for (uint16_t i = 0; i < NUM_EQ; ++i) {
       y_global[sys_index + NUM_SYS * i] = y[i];
     }
