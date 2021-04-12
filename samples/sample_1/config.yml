@@ -1,0 +1,21 @@
+Constants : 
+  NumSys : 5
+  Stepsize : 0.1
+  Begin : 0.0
+  End : 50.0
+
+IndependentVar : t
+
+Method : rki45
+
+UnknownDecls : [
+  y, z
+]
+
+ParameterDecls : [
+  A
+]
+
+Equations :
+  y' : z
+  z' : pow(z, 2) - 3 / (A + pow(y, 2))
