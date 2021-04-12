@@ -302,7 +302,7 @@ ParsedObject parse(const fs::path &config_path) {
   Grammer::SymbolTable = nullptr;
 
   return ret;
-} // namespace Parser
+}
 
 } // namespace Parser
 

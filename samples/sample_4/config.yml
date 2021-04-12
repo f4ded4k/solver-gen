@@ -1,0 +1,38 @@
+Constants:
+  NumSys : 1
+  Stepsize : 0.1
+  Begin : 0.0
+  End : 10000.0
+
+IndependentVar : t
+
+ParameterDecls: [
+  pro_conc(3), k_basal_trans(3), k_mrna_degrad(3), k_trans(3), k_pro_degrad(3), fold_change, k_binding(3)(3), coop
+]
+
+IntermediateParamDecls: [
+  total_pro_rate(3), bound_pro_rate(3)(3), retro(3)(3)
+]
+
+UnknownDecls: [
+  free_pro_rate(3), mrna_rate(3)
+]
+
+IntermediateParamDefs:
+  total_pro_rate[0] : k_trans[0] * mrna_rate[0] - k_pro_degrad[0] * free_pro_rate[0]
+  total_pro_rate[1] : k_trans[1] * mrna_rate[1] - k_pro_degrad[1] * free_pro_rate[1]
+  total_pro_rate[2] : k_trans[2] * mrna_rate[2] - k_pro_degrad[2] * free_pro_rate[2]
+  bound_pro_rate[0][0] : pro_conc[1] * coop * pow(free_pro_rate[0] / k_binding[0][1], coop - 1) / (k_binding[0][1] * pow(1 + pow(free_pro_rate[0] / k_binding[0][1], coop), 2))
+  bound_pro_rate[1][1] : pro_conc[2] * coop * pow(free_pro_rate[1] / k_binding[1][2], coop - 1) / (k_binding[1][2] * pow(1 + pow(free_pro_rate[1] / k_binding[1][2], coop), 2))
+  bound_pro_rate[2][2] : pro_conc[0] * coop * pow(free_pro_rate[2] / k_binding[2][0], coop - 1) / (k_binding[2][0] * pow(1 + pow(free_pro_rate[2] / k_binding[2][0], coop), 2))
+  retro[0][0] : 1 - bound_pro_rate[0][0] / (1 + bound_pro_rate[0][0])
+  retro[1][1] : 1 - bound_pro_rate[1][1] / (1 + bound_pro_rate[1][1])
+  retro[2][2] : 1 - bound_pro_rate[2][2] / (1 + bound_pro_rate[2][2])
+
+Equations:
+  free_pro_rate[0]' : retro[0][0] * total_pro_rate[0]
+  free_pro_rate[1]' : retro[1][1] * total_pro_rate[1]
+  free_pro_rate[2]' : retro[2][2] * total_pro_rate[2]
+  mrna_rate[0]' : k_mrna_degrad[0] * mrna_rate[0] - k_basal_trans[0] * pro_conc[0] * (1 + fold_change * pow(free_pro_rate[2] / k_binding[2][0], coop) / (1 + pow(free_pro_rate[2] / k_binding[2][0], coop)))
+  mrna_rate[1]' : k_mrna_degrad[1] * mrna_rate[1] - k_basal_trans[1] * pro_conc[1] * (1 + fold_change * pow(free_pro_rate[0] / k_binding[0][1], coop) / (1 + pow(free_pro_rate[0] / k_binding[0][1], coop)))
+  mrna_rate[2]' : k_mrna_degrad[2] * mrna_rate[2] - k_basal_trans[2] * pro_conc[2] * (1 + fold_change * pow(free_pro_rate[1] / k_binding[1][2], coop) / (1 + pow(free_pro_rate[1] / k_binding[1][2], coop)))

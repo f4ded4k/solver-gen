@@ -1,0 +1,22 @@
+Constants : 
+  NumSys : 1
+  Stepsize : 0.01
+  Begin : 0.0
+  End : 100.0
+
+IndependentVar : t
+
+Method : rki45
+
+UnknownDecls : [
+  x, y, z
+]
+
+ParameterDecls : [
+  sigma, rho, beta
+]
+
+Equations :
+  x' : sigma * (y - x)
+  y' : x * (rho - z) - y
+  z' : x * y - beta * z
